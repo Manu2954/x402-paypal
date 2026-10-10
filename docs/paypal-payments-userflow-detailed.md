@@ -125,24 +125,136 @@ Partial $9 + `final_capture:true` releases $1, closes order. Rules: open auths �
 
 Use when: stock check, custom build, variable final amount.
 
-## 4. Variation B — Saved/agent repeat (Vault, no re-login)
+## 4. Variation B — Saved/agent repeat (Vault, no re-login) — detailed
 
-First purchase Ana consents to save. Backend:
+Problem: Ana does not want to log in + pick funding every time ShopBot buys for her. Solution: save once with consent, reuse via Vault token. This is PayPal analog of Stripe `pm_xxx` reuse; per-purchase Order/nonce is analog of `spt_xxx`.
+
+### 4.1 Two tokens, two lifetimes
+
+- `setup-token (SETUP-ID)`: temporary, single-exchange. Created from raw payment source + verification choice. Buyer approves save on PayPal token page (sees `description`). Then exchanged once for permanent token.
+- `payment-token (8kk...)`: permanent reusable reference (`id:8kk8458...`, `status:ACTIVE`, links `self` + `delete`). Stored in customer vault (`customer.id: ana-123`). Used as `payment_source.{paypal|card}.vault_id` in Orders. Revoked via `DELETE`, fires `VAULT.PAYMENT-TOKEN.DELETED`.
+
+Never store PAN. Store only `8kk...` + `customer.id`. PayPal stores actual funding.
+
+Key fields on setup:
+- `description`: shown to buyer ("Save for ShopBot — agent purchases up to $100"). Keep specific, 1-128 chars.
+- `usage_pattern`: e.g. `UNSCHEDULED_PREPAID` (agent variable-amount prepaid). Tells risk/issuer expected model.
+- `usage_type: MERCHANT`, `customer_type: CONSUMER`.
+- `permit_multiple_payment_tokens`: true if same PayPal login maps to multiple sub-customers at merchant (distinguish Ana vs family sharing login).
+- `verification_method`: e.g. `SCA_WHEN_REQUIRED`, `THREE_D_SECURE`, Smart Dollar Auth. Pre-verifies to reduce later 422.
+
+### 4.2 First save — PayPal wallet source (Ana's main case)
+
+Backend creates setup-token:
 
 ```bash
-curl -X POST https://api-m.sandbox.paypal.com/v3/vault/setup-tokens -H "Authorization: Bearer ACCESS" -H "Content-Type: application/json" -d '{"payment_source":{"paypal":{"description":"Save for ShopBot","usage_pattern":"UNSCHEDULED_PREPAID","usage_type":"MERCHANT"}},"customer":{"id":"ana-123"}}'
-# approve on PayPal token page
-curl -X POST https://api-m.sandbox.paypal.com/v3/vault/payment-tokens -H "Authorization: Bearer ACCESS" -H "Content-Type: application/json" -d '{"payment_source":{"setup_token":"SETUP-ID"}}'
-# -> {id:"8kk8458...", status:"ACTIVE"}
+curl -X POST https://api-m.sandbox.paypal.com/v3/vault/setup-tokens \
+ -H "Authorization: Bearer ACCESS" -H "Content-Type: application/json" \
+ -d '{"payment_source":{"paypal":{"description":"Save for ShopBot agent purchases","usage_pattern":"UNSCHEDULED_PREPAID","usage_type":"MERCHANT"}},"customer":{"id":"ana-123"}}'
+# -> {id:"SETUP-123", status:"CREATED", links:[{rel:"approve", href:"https://www.sandbox.paypal.com/agree/..."}]}
 ```
 
-Next $20 ShopB purchase, agent checks budget/allowlist/expiry itself then:
+Ana opens approve link, logs in, reviews description + merchant, clicks Agree. Setup becomes `APPROVED`. Backend exchanges immediately (setup-tokens expire, do not hoard):
 
 ```bash
-curl -X POST https://api-m.sandbox.paypal.com/v2/checkout/orders -H "Authorization: Bearer ACCESS" -H "Content-Type: application/json" -H "PayPal-Request-Id: UUID" -d '{"intent":"CAPTURE","purchase_units":[{"amount":{"currency_code":"USD","value":"20.00"},"payee":{"email_address":"shopb@example.com"}}],"payment_source":{"paypal":{"vault_id":"8kk8458..."}}}'
+curl -X POST https://api-m.sandbox.paypal.com/v3/vault/payment-tokens \
+ -H "Authorization: Bearer ACCESS" -H "Content-Type: application/json" \
+ -d '{"payment_source":{"setup_token":"SETUP-123"}}'
+# -> {id:"8kk8458...", status:"ACTIVE", links:[{rel:"self",href:".../8kk8458..."},{rel:"delete",href:"..."}]}
 ```
 
-No redirect if issuer approves. If `422 Payer Action Required` (ICICI/EU), show challenge — saving does not bypass OTP. Revoke via `DELETE /v3/vault/payment-tokens/8kk...` → `VAULT.PAYMENT-TOKEN.DELETED`. This is PayPal analog of Stripe `pm_xxx` reuse (Vault) vs `spt_xxx` per-purchase (nonce/order).
+Save `{customer:"ana-123", vaultId:"8kk8458...", createdAt, scope:"agent-preapproved"}` in DB. Webhook `VAULT.PAYMENT-TOKEN.CREATED` confirms.
+
+### 4.3 First save — card source (for card-funded agent)
+
+Same 2-step, different source + verification:
+
+```bash
+curl -X POST https://api-m.sandbox.paypal.com/v3/vault/setup-tokens \
+ -H "Authorization: Bearer ACCESS" -H "Content-Type: application/json" \
+ -d '{"payment_source":{"card":{"number":"4111111111111111","expiry":"2028-12","name":"Ana","verification_method":"SCA_WHEN_REQUIRED"}},"usage_pattern":"UNSCHEDULED_PREPAID","customer":{"id":"ana-123"}}'
+```
+
+Card approve may include 3DS challenge inline. Then same `POST payment-tokens {setup_token}` exchange. Response also `8kk...` but `payment_source.card` with `brand/last4`. Reuse via `payment_source.card.vault_id` (not `paypal.vault_id` — source type must match).
+
+### 4.4 Repeat purchase — agent uses token, no login
+
+ShopBot wants $20 from ShopB. Agent enforces its own policy first — PayPal enforces no global budget:
+
+```js
+// Agent-side guard, mirrors SPT budget discussion
+if (spentThisMonth + 20 > 100) return askHuman("Over $100 budget, approve $20 ShopB?");
+if (!allowlist.has("shopb@example.com")) return askHuman("New seller, approve?");
+if (Date.now() > vaultExpiry) return reSave();
+```
+
+Then single-step order with vault + fresh idempotency key:
+
+```bash
+curl -X POST https://api-m.sandbox.paypal.com/v2/checkout/orders \
+ -H "Authorization: Bearer ACCESS" -H "Content-Type: application/json" \
+ -H "PayPal-Request-Id: 550e8400-e29b-41d4-a716-446655440000" \
+ -d '{"intent":"CAPTURE","purchase_units":[{"amount":{"currency_code":"USD","value":"20.00"},"payee":{"email_address":"shopb@example.com"},"custom_id":"ana-123|shopbot|budget-key"}],"payment_source":{"paypal":{"vault_id":"8kk8458..."}}}'
+# card variant: "payment_source":{"card":{"vault_id":"8kk8458..."}}
+# -> {id:"ORDER-456", status:"APPROVED"} then auto-captured, or directly COMPLETED on capture call
+```
+
+No redirect if issuer approves. Capture same as main flow (`POST .../capture` or auto-capture for single-step), money to ShopB balance, webhooks `PAYMENT.CAPTURE.COMPLETED` + `CHECKOUT.ORDER.COMPLETED`. Agent notifies Ana after: "Paid $20 ShopB, order O-456".
+
+```mermaid
+flowchart TD
+  A[Ana: consent save once<br/>approve setup-token] --> B[Backend: POST setup-tokens<br/>+ description/usage]
+  B --> C[Exchange: POST payment-tokens<br/>-> 8kk ACTIVE + webhook CREATED]
+  C --> D[Agent DB: store 8kk + budget/allowlist]
+  D --> E[Next purchase: budget check<br/>over? ask human : proceed]
+  E --> F[POST /v2/checkout/orders<br/>vault_id + fresh Request-Id]
+  F --> G{Issuer?}
+  G -- Approved --> H[Capture COMPLETED<br/>no login]
+  G -- 422 Required --> I[Challenge: approveUrl/confirm<br/>human OTP/3DS]
+  C --> J[Revoke: DELETE 8kk<br/>webhook DELETED]
+```
+
+### 4.5 When human is still needed (no bypass)
+
+Saving does not bypass bank/SCA — same rule as SPT + ICICI thread:
+
+- `422 Payer Action Required` / `INSTRUMENT_DECLINED`: EU PSD2, IN cards, high amount, new seller, risk. Agent must surface `payer-action` link / `confirm-payment-source` redirect. Ana completes OTP/3DS. Order waits.
+- Wallet biometric (Apple/Google via PayPal): fresh device auth per purchase, one-time cryptogram, no replay.
+- Vault deleted/expired, `permit_multiple` mismatch, currency mismatch: re-save.
+- Policy block: agent budget/allowlist says ask. This is app-level, not PayPal-enforced — build it or agent can charge unlimited small orders from one token.
+
+Concrete: ICICI card saved as Vault card still OTPs every $10 ShopA + $20 ShopB. Each capture is new charge. Only pre-funded PayPal balance + Payouts avoids per-charge OTP (loaded-wallet pattern).
+
+### 4.6 Manage: list/get/delete + webhooks
+
+```bash
+curl -X GET "https://api-m.sandbox.paypal.com/v3/vault/payment-tokens?customer_id=ana-123" -H "Authorization: Bearer ACCESS"
+curl -X GET https://api-m.sandbox.paypal.com/v3/vault/payment-tokens/8kk8458... -H "Authorization: Bearer ACCESS"
+curl -X DELETE https://api-m.sandbox.paypal.com/v3/vault/payment-tokens/8kk8458... -H "Authorization: Bearer ACCESS"
+```
+
+Events: `VAULT.PAYMENT-TOKEN.CREATED/DELETED/DELETION-INITIATED`. On delete, agent must drop DB row + stop charging, else `422`/404 on reuse. Ana can also revoke from PayPal.com token management — same webhook fires, agent must handle.
+
+### 4.7 Mapping to Stripe SPT + x402 facilitator
+
+| Stripe | PayPal Vault Variation B |
+|---|---|
+| `pm_xxx` reusable | `8kk...` reusable |
+| `spt_xxx` per purchase scoped `profile/currency/max/expires`, auto `deactivated:consumed` | Order/nonce per purchase (`ORDER-456`), no auto single-use grant; agent enforces `amount/seller/expiry` + `DELETE` to revoke |
+| `requires_action` + `handleNextAction` | `422` + `payer-action` / `confirm-payment-source` |
+| `POST issued_tokens` + `PI {granted_token}` + clone `pm_xxx->pm_yyy` | `POST orders {vault_id}` + capture to balance, no clone |
+| x402 MPP: `402 -> SPT -> receipt` | x402 PayPal: `verify()=GET order (amount/payee/expiry/reuse)`, `settle()=capture/sale/vault` idempotent |
+
+In facilitator, pre-vaulted `8kk...` is what lets `settle()` run headless after one approval. Without it, every x402 retry needs interactive `approveUrl`.
+
+### 4.8 Pitfalls for hackathon demo
+
+- Exchange setup-token immediately; do not reuse setup-token twice.
+- Fresh `PayPal-Request-Id` per new purchase; reuse only on retry of same purchase + `GET` reconcile first.
+- `payment_source` type must match saved source (`paypal.vault_id` vs `card.vault_id`).
+- One currency per order; cross-currency needs new order + FX fee.
+- Test revoke path: delete token, show next charge fails cleanly + webhook received.
+- Log `debug_id` on 422, show Ana actionable challenge link, not raw error.
 
 ## 5. Variation C — Marketplace disburse (Payouts)
 
