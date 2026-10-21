@@ -1,0 +1,56 @@
+spring:
+  application:
+    name: x402-paypal
+  config:
+    import: optional:file:.env[.properties]
+  datasource:
+    url: jdbc:h2:file:./data/x402;AUTO_SERVER=TRUE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+server:
+  port: 8080
+
+app:
+  public-base-url: ${APP_PUBLIC_BASE_URL:http://localhost:8080}
+  brand-name: Premium API
+
+paypal:
+  env: ${PAYPAL_ENV:sandbox}
+  client-id: ${PAYPAL_CLIENT_ID:}
+  client-secret: ${PAYPAL_CLIENT_SECRET:}
+  webhook-id: ${PAYPAL_WEBHOOK_ID:}
+  connect-timeout: 5s
+  read-timeout: 20s
+
+x402:
+  network: ${X402_NETWORK:paypal:sandbox}
+  asset: ${X402_ASSET:USD}
+  pay-to: ${X402_PAY_TO:merchant}
+  master-key: ${X402_MASTER_KEY:}
+  vault-key: ${X402_VAULT_KEY:}
+  challenge-ttl: 120s
+  routes:
+    "[GET /v1/premium/quote]": 100
+    "[GET /v1/premium/report]": 200
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always

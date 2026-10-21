@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Save a payment method</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 460px; margin: 3rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.4rem; }
+    label { display: block; margin: 1rem 0 0.35rem; font-weight: 600; }
+    .field { border: 1px solid #8884; border-radius: 8px; min-height: 42px; padding: 4px; }
+    button { margin-top: 1.25rem; width: 100%; min-height: 44px; border: 0; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+    #status { margin-top: 1rem; white-space: pre-wrap; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <h1>Save a payment method</h1>
+  <p>This card is saved with PayPal for pay-per-request access. No card data reaches the API server.</p>
+
+  <div id="form">
+    <label for="card-holder-name">Name on card</label>
+    <div id="card-holder-name" class="field"></div>
+
+    <label for="card-number">Card number</label>
+    <div id="card-number" class="field"></div>
+
+    <label for="expiration-date">Expiry</label>
+    <div id="expiration-date" class="field"></div>
+
+    <label for="cvv">CVV</label>
+    <div id="cvv" class="field"></div>
+
+    <button id="submit" type="button">Save card</button>
+  </div>
+
+  <div id="status"></div>
+
+  <script>
+    const token = window.location.pathname.split('/').filter(Boolean)[1];
+    const statusElement = document.getElementById('status');
+    const formElement = document.getElementById('form');
+    const submitButton = document.getElementById('submit');
+
+    function setStatus(value) {
+      statusElement.textContent = value;
+    }
+
+    function describeError(error) {
+      if (!error) return 'Unknown error';
+      const data = error.data || {};
+      const message = error.message || data.message || String(error);
+      const details = error.details || data.details;
+      if (!details) return message;
+      const text = typeof details === 'string' ? details : JSON.stringify(details);
+      return `${message}\n${text}`;
+    }
+
+    async function start() {
+      if (!token) {
+        setStatus('Missing enrollment token.');
+        return;
+      }
+
+      const config = await fetch(`/enroll/${token}/config`).then(async (response) => {
+        if (!response.ok) throw new Error(await response.text());
+        return response.json();
+      });
+
+      if (!window.paypal || !window.paypal.CardFields) {
+        setStatus('PayPal card fields did not load. Check the client ID and network.');
+        return;
+      }
+
+      const cardFields = window.paypal.CardFields({
+        createVaultSetupToken: async () => config.setupTokenId,
+        onApprove: async ({ vaultSetupToken }) => {
+          setStatus('Saving...');
+          const response = await fetch(`/enroll/${token}/exchange`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vaultSetupToken })
+          });
+          if (!response.ok) {
+            setStatus(await response.text());
+            return;
+          }
+          const result = await response.json();
+          formElement.classList.add('hidden');
+          setStatus(`Saved ${result.brand || ''} ${result.last4 || ''}. You can close this tab.`);
+        },
+        onError: (error) => setStatus(describeError(error))
+      });
+
+      if (!cardFields.isEligible()) {
+        setStatus('Card fields are not eligible for this PayPal account.');
+        return;
+      }
+
+      cardFields.NameField().render('#card-holder-name');
+      cardFields.NumberField().render('#card-number');
+      cardFields.ExpiryField().render('#expiration-date');
+      cardFields.CVVField().render('#cvv');
+
+      submitButton.addEventListener('click', () => {
+        setStatus('');
+        cardFields.submit().catch((error) => setStatus(describeError(error)));
+      });
+    }
+
+    const script = document.createElement('script');
+    script.onload = start;
+    script.onerror = () => setStatus('Could not load the PayPal SDK.');
+
+    fetch(`/enroll/${token}/config`).then((response) => response.json()).then((config) => {
+      script.src = `https://www.paypal.com/sdk/js?components=card-fields&client-id=${encodeURIComponent(config.clientId)}&currency=USD&intent=capture`;
+      document.head.appendChild(script);
+    }).catch((error) => setStatus(error.message || String(error)));
+  </script>
+</body>
+</html>

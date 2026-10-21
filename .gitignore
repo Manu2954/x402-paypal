@@ -1,1 +1,9 @@
 thoughts.md
+.env
+.env.local
+data/
+build/
+.gradle/
+out/
+*.log
+.DS_Store
