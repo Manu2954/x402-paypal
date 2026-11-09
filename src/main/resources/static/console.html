@@ -148,6 +148,49 @@
       color: #cbd5e1;
       border: 1px solid #64748b;
     }
+    .status-error {
+      background-color: #7f1d1d;
+      color: #fca5a5;
+      border: 1px solid #ef4444;
+    }
+    .tool-result {
+      background-color: #164e63;
+      border: 1px solid #0891b2;
+      border-radius: 4px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    .tool-result-header {
+      color: #06b6d4;
+      font-weight: bold;
+      margin-bottom: 0.5rem;
+      font-size: 0.9rem;
+    }
+    .tool-result-content {
+      color: #cbd5e1;
+      font-size: 0.85rem;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .receipt-section {
+      background-color: #1a1a1a;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.75rem;
+      margin-bottom: 0.75rem;
+      font-size: 0.9rem;
+    }
+    .receipt-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.25rem 0;
+      color: var(--text);
+    }
+    .receipt-label {
+      color: var(--text-muted);
+    }
   </style>
 </head>
 <body>
@@ -187,10 +230,12 @@
       <h2>Money</h2>
       <div class="zone-content">
         <div class="button-group">
-          <button id="btn-buy-quote" onclick="buyQuote()">Buy Quote</button>
+          <button id="btn-run-report" onclick="runMarketReport()">Run market report</button>
+          <button id="btn-buy-quote" onclick="buyQuote()" style="display: none;">Buy Quote</button>
         </div>
         <div class="budget-label">Budget</div>
         <div id="budget">–</div>
+        <div id="receipt-display"></div>
         <div class="log-area" id="log-money"></div>
       </div>
     </div>
@@ -363,6 +408,193 @@
     }
 
     /**
+     * Run market report: call buyQuote and render the result
+     */
+    async function runMarketReport() {
+      const result = await buyQuote();
+
+      if (!result) {
+        log('money', 'Error: buyQuote returned null');
+        return;
+      }
+
+      const receiptDisplay = document.getElementById('receipt-display');
+      receiptDisplay.innerHTML = '';
+
+      // Handle success (200)
+      if (result.status === 200) {
+        log('money', 'Rendering successful payment...');
+
+        // Render content in resource zone
+        if (result.body) {
+          const resourceLog = document.getElementById('log-resource');
+          resourceLog.innerHTML = '';
+
+          // Add AlphaSignal tool result header
+          const toolResult = document.createElement('div');
+          toolResult.className = 'tool-result';
+          toolResult.innerHTML = `
+            <div class="tool-result-header">✓ AlphaSignal Tool Result</div>
+            <div class="tool-result-content">${escapeHtml(JSON.stringify(result.body, null, 2))}</div>
+          `;
+          resourceLog.appendChild(toolResult);
+        }
+
+        // Decode and render receipt
+        if (result.receiptHeader) {
+          try {
+            const decoded = atob(result.receiptHeader);
+            const receipt = JSON.parse(decoded);
+
+            // Update budget (decrement by $1.00 = 100 cents)
+            if (agent.budgetCents !== null) {
+              agent.budgetCents -= 100;
+              const budgetElement = document.getElementById('budget');
+              budgetElement.textContent = formatMoney(agent.budgetCents);
+              log('money', `Budget updated: ${formatMoney(agent.budgetCents)}`);
+            }
+
+            // Render receipt in money zone
+            const receiptSection = document.createElement('div');
+            receiptSection.className = 'receipt-section';
+
+            // Transaction info
+            if (receipt.transaction) {
+              receiptSection.innerHTML += `
+                <div class="receipt-row">
+                  <span class="receipt-label">Transaction:</span>
+                  <span>${escapeHtml(receipt.transaction)}</span>
+                </div>
+              `;
+            }
+
+            // Order ID
+            if (receipt.extra && receipt.extra.orderId) {
+              receiptSection.innerHTML += `
+                <div class="receipt-row">
+                  <span class="receipt-label">Order ID:</span>
+                  <span>${escapeHtml(receipt.extra.orderId)}</span>
+                </div>
+              `;
+            }
+
+            // Capture ID
+            if (receipt.extra && receipt.extra.captureId) {
+              receiptSection.innerHTML += `
+                <div class="receipt-row">
+                  <span class="receipt-label">Capture ID:</span>
+                  <span>${escapeHtml(receipt.extra.captureId)}</span>
+                </div>
+              `;
+            }
+
+            // Amount breakdown
+            if (receipt.extra) {
+              if (receipt.extra.gross !== undefined) {
+                receiptSection.innerHTML += `
+                  <div class="receipt-row">
+                    <span class="receipt-label">Gross:</span>
+                    <span>${escapeHtml(formatMoney(receipt.extra.gross))}</span>
+                  </div>
+                `;
+              }
+              if (receipt.extra.fee !== undefined) {
+                receiptSection.innerHTML += `
+                  <div class="receipt-row">
+                    <span class="receipt-label">Fee:</span>
+                    <span>${escapeHtml(formatMoney(receipt.extra.fee))}</span>
+                  </div>
+                `;
+              }
+              if (receipt.extra.net !== undefined) {
+                receiptSection.innerHTML += `
+                  <div class="receipt-row">
+                    <span class="receipt-label">Net:</span>
+                    <span>${escapeHtml(formatMoney(receipt.extra.net))}</span>
+                  </div>
+                `;
+              }
+              if (receipt.extra.status !== undefined) {
+                receiptSection.innerHTML += `
+                  <div class="receipt-row">
+                    <span class="receipt-label">Status:</span>
+                    <span>${escapeHtml(receipt.extra.status)}</span>
+                  </div>
+                `;
+              }
+            }
+
+            receiptDisplay.appendChild(receiptSection);
+            log('money', 'Receipt rendered');
+
+          } catch (e) {
+            log('money', `Error parsing receipt: ${e.message}`);
+          }
+        }
+
+      } else if (result.status === 402) {
+        // Handle error (402)
+        log('money', 'Rendering payment error...');
+
+        const body = result.body || {};
+        const errorCode = body.errorCode || body.code || 'UNKNOWN_ERROR';
+        const errorMessage = body.message || body.errorMessage || 'Payment declined';
+
+        // Render error in resource zone
+        const resourceLog = document.getElementById('log-resource');
+        resourceLog.innerHTML = '';
+
+        const errorResult = document.createElement('div');
+        errorResult.className = 'status-message status-error';
+        errorResult.style.fontSize = '1rem';
+        errorResult.style.padding = '1rem';
+        errorResult.innerHTML = `
+          <div style="font-weight: bold; margin-bottom: 0.5rem;">✗ Payment Failed</div>
+          <div style="margin-bottom: 0.5rem;"><strong>Code:</strong> ${escapeHtml(errorCode)}</div>
+          <div><strong>Message:</strong> ${escapeHtml(errorMessage)}</div>
+        `;
+        resourceLog.appendChild(errorResult);
+
+        // Render error in money zone
+        const receiptSection = document.createElement('div');
+        receiptSection.className = 'status-message status-error';
+        receiptSection.style.marginBottom = '0.75rem';
+        receiptSection.innerHTML = `
+          <div style="font-weight: bold;">✗ ${escapeHtml(errorCode)}</div>
+          <div style="margin-top: 0.25rem; font-size: 0.9rem;">${escapeHtml(errorMessage)}</div>
+        `;
+        receiptDisplay.appendChild(receiptSection);
+
+        log('money', `Error rendered: ${errorCode}`);
+
+      } else {
+        // Unexpected status
+        log('money', `Unexpected status: ${result.status}`);
+        const errorSection = document.createElement('div');
+        errorSection.className = 'status-message status-error';
+        errorSection.innerHTML = `
+          <div style="font-weight: bold;">✗ Unexpected Response</div>
+          <div style="margin-top: 0.25rem; font-size: 0.9rem;">Status: ${result.status}</div>
+        `;
+        receiptDisplay.appendChild(errorSection);
+      }
+    }
+
+    /**
+     * HTML escape utility
+     */
+    function escapeHtml(text) {
+      const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+      };
+      return text.replace(/[&<>"']/g, m => map[m]);
+    }
+
+    /**
      * Perform x402 sign-and-pay flow for /v1/premium/quote
      * Step 1: GET without signature, expect 402 + PAYMENT-REQUIRED header
      * Step 2: Extract challenge and check enrollment
@@ -372,7 +604,7 @@
     async function buyQuote() {
       if (!agent.apiKey || !agent.hmacSecret || !agent.agentId) {
         log('agent', 'Error: Agent not bootstrapped yet');
-        return;
+        return null;
       }
 
       try {
@@ -393,14 +625,14 @@
           log('money', `Expected 402, got ${firstResponse.status}`);
           const text = await firstResponse.text();
           log('money', `Body: ${text}`);
-          return;
+          return null;
         }
 
         // Read PAYMENT-REQUIRED header
         const paymentRequiredHeader = firstResponse.headers.get('PAYMENT-REQUIRED');
         if (!paymentRequiredHeader) {
           log('money', 'Error: No PAYMENT-REQUIRED header in 402 response');
-          return;
+          return null;
         }
 
         // Decode the header (base64 -> JSON)
@@ -410,7 +642,7 @@
           required = JSON.parse(decoded);
         } catch (e) {
           log('money', `Error decoding PAYMENT-REQUIRED header: ${e.message}`);
-          return;
+          return null;
         }
 
         log('money', 'Challenge received');
@@ -419,7 +651,7 @@
         const accepts = required.accepts;
         if (!accepts || accepts.length === 0) {
           log('money', 'Error: No payment options offered');
-          return;
+          return null;
         }
 
         const accept = accepts[0];
@@ -428,7 +660,7 @@
         if (!enrolled) {
           log('agent', 'Enroll first');
           log('money', 'Enrollment required - stopping');
-          return;
+          return null;
         }
 
         // Step 3: Extract fields and build canonical string
@@ -504,29 +736,32 @@
         }
 
         // Log body based on status
+        let responseBody = null;
         if (paidResponse.status === 200) {
           log('money', 'SUCCESS: Payment accepted (200)');
-          const body = await paidResponse.json();
-          log('money', `Quote: ${JSON.stringify(body).substring(0, 100)}...`);
+          responseBody = await paidResponse.json();
+          log('money', `Quote: ${JSON.stringify(responseBody).substring(0, 100)}...`);
         } else if (paidResponse.status === 402) {
-          const body = await paidResponse.json();
-          const errorCode = body.errorCode || body.code || 'unknown';
+          responseBody = await paidResponse.json();
+          const errorCode = responseBody.errorCode || responseBody.code || 'unknown';
           log('money', `Payment declined: ${errorCode}`);
-          log('money', `Message: ${body.message || body.errorMessage || body.body || ''}`);
+          log('money', `Message: ${responseBody.message || responseBody.errorMessage || responseBody.body || ''}`);
         } else {
           const text = await paidResponse.text();
           log('money', `Response body: ${text.substring(0, 100)}`);
+          responseBody = { text };
         }
 
         return {
           status: paidResponse.status,
-          body: await paidResponse.json().catch(() => null),
+          body: responseBody,
           receiptHeader: receiptHeader,
           replayHeader: replayHeader
         };
 
       } catch (error) {
         log('money', `Error: ${error.message}`);
+        return null;
       }
     }
 
