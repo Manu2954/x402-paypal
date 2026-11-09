@@ -101,6 +101,53 @@
     .error {
       color: #ef4444;
     }
+    .button-group {
+      display: flex;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+    button {
+      background-color: #3b82f6;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 0.6rem 1rem;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    button:hover {
+      background-color: #2563eb;
+    }
+    button:active {
+      background-color: #1d4ed8;
+    }
+    button:disabled {
+      background-color: #6b7280;
+      cursor: not-allowed;
+    }
+    .status-message {
+      padding: 0.75rem;
+      border-radius: 4px;
+      margin-bottom: 1rem;
+      font-size: 0.95rem;
+    }
+    .status-info {
+      background-color: #164e63;
+      color: #06b6d4;
+      border: 1px solid #06b6d4;
+    }
+    .status-success {
+      background-color: #064e3b;
+      color: #10b981;
+      border: 1px solid #10b981;
+    }
+    .status-neutral {
+      background-color: #4b5563;
+      color: #cbd5e1;
+      border: 1px solid #64748b;
+    }
   </style>
 </head>
 <body>
@@ -115,6 +162,11 @@
           <div class="agent-info-label">Agent ID</div>
           <div class="agent-info-value" id="agent-id">–</div>
         </div>
+        <div class="button-group">
+          <button id="btn-enroll" onclick="enrollCard()">Enroll card</button>
+          <button id="btn-refresh" onclick="refreshEnrollmentStatus()">Refresh status</button>
+        </div>
+        <div id="enrollment-status"></div>
         <div style="margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted);">
           Log:
         </div>
@@ -180,8 +232,96 @@
     }
 
     /**
-     * Bootstrap: fetch demo agent on page load
+     * Enroll a card by calling POST /v1/enrollments with Bearer auth
      */
+    async function enrollCard() {
+      if (!agent.apiKey) {
+        log('agent', 'Error: Agent not bootstrapped yet');
+        return;
+      }
+
+      try {
+        log('agent', 'Enrolling card...');
+
+        const response = await fetch('/v1/enrollments', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${agent.apiKey}`
+          },
+          body: JSON.stringify({ sourceType: 'CARD' })
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          log('agent', `Error: ${response.status} ${text}`);
+          return;
+        }
+
+        const data = await response.json();
+        log('agent', `Enrollment created: ${data.enrollmentId}`);
+        log('agent', `Opening CardFields page in new tab...`);
+        log('agent', `Please enter the PayPal test card on the hosted page.`);
+
+        // Open the enrollment URL in a new tab
+        window.open(data.enrollmentUrl, '_blank');
+
+      } catch (error) {
+        log('agent', `Error: ${error.message}`);
+      }
+    }
+
+    /**
+     * Refresh enrollment status by calling GET /v1/enrollments with Bearer auth
+     */
+    async function refreshEnrollmentStatus() {
+      if (!agent.apiKey) {
+        log('agent', 'Error: Agent not bootstrapped yet');
+        return;
+      }
+
+      try {
+        log('agent', 'Checking enrollment status...');
+
+        const response = await fetch('/v1/enrollments', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${agent.apiKey}`
+          }
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          log('agent', `Error: ${response.status} ${text}`);
+          return;
+        }
+
+        const enrollments = await response.json();
+        const statusElement = document.getElementById('enrollment-status');
+
+        // Check if there's an active card enrollment
+        const activeCard = enrollments.find(e =>
+          e.status === 'ACTIVE' && e.sourceType === 'CARD'
+        );
+
+        if (!activeCard) {
+          // No active card enrollment
+          statusElement.className = 'status-message status-neutral';
+          statusElement.textContent = 'No active card — enroll first';
+          log('agent', 'No active card enrollment found');
+        } else {
+          // Active card found
+          const cardDisplay = `${activeCard.brand} •••• ${activeCard.last4}`;
+          statusElement.className = 'status-message status-success';
+          statusElement.textContent = `✓ Active card: ${cardDisplay}`;
+          log('agent', `Active card: ${cardDisplay}`);
+        }
+
+      } catch (error) {
+        log('agent', `Error: ${error.message}`);
+      }
+    }
+
     async function bootstrap() {
       try {
         log('agent', 'Bootstrapping demo agent...');
