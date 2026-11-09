@@ -231,6 +231,8 @@
       <div class="zone-content">
         <div class="button-group">
           <button id="btn-run-report" onclick="runMarketReport()">Run market report</button>
+          <button id="btn-replay" onclick="replayQuote()" disabled>Replay (same signature)</button>
+          <button id="btn-new-take" onclick="newTake()">New take</button>
           <button id="btn-buy-quote" onclick="buyQuote()" style="display: none;">Buy Quote</button>
         </div>
         <div class="budget-label">Budget</div>
@@ -527,6 +529,10 @@
             receiptDisplay.appendChild(receiptSection);
             log('money', 'Receipt rendered');
 
+            // Enable replay now that we have a cached signature header
+            const replayBtn = document.getElementById('btn-replay');
+            if (replayBtn) replayBtn.disabled = false;
+
           } catch (e) {
             log('money', `Error parsing receipt: ${e.message}`);
           }
@@ -763,6 +769,101 @@
         log('money', `Error: ${error.message}`);
         return null;
       }
+    }
+
+    /**
+     * Replay the exact cached PAYMENT-SIGNATURE header verbatim.
+     * Expects X-X402-Replay: true and NO second charge (budget unchanged).
+     */
+    async function replayQuote() {
+      if (!lastSignatureHeader) {
+        log('money', 'Replay: no prior signature to replay — run a report first');
+        return;
+      }
+      if (!agent.apiKey) {
+        log('money', 'Replay: agent not ready');
+        return;
+      }
+
+      try {
+        log('money', 'Replaying the SAME PAYMENT-SIGNATURE (expect cached, no new charge)...');
+        const budgetBefore = agent.budgetCents;
+
+        const response = await fetch('/v1/premium/quote', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${agent.apiKey}`,
+            'PAYMENT-SIGNATURE': lastSignatureHeader
+          }
+        });
+
+        const replayFlag = response.headers.get('X-X402-Replay');
+        log('money', `Response: ${response.status} | X-X402-Replay: ${replayFlag || '(none)'}`);
+
+        const receiptDisplay = document.getElementById('receipt-display');
+
+        if (response.status === 200 && replayFlag === 'true') {
+          const body = await response.json();
+          // Render the replayed content in the resource zone
+          const resourceLog = document.getElementById('log-resource');
+          resourceLog.innerHTML = '';
+          const toolResult = document.createElement('div');
+          toolResult.className = 'tool-result';
+          toolResult.innerHTML = `
+            <div class="tool-result-header">↺ AlphaSignal (replayed — cached, no charge)</div>
+            <div class="tool-result-content">${escapeHtml(JSON.stringify(body, null, 2))}</div>
+          `;
+          resourceLog.appendChild(toolResult);
+
+          // Budget must NOT change on a replay
+          const note = document.createElement('div');
+          note.className = 'status-message status-success';
+          note.innerHTML = `<div style="font-weight:bold;">↺ Replay served from cache</div>`
+            + `<div style="margin-top:0.25rem;font-size:0.9rem;">X-X402-Replay: true — no second charge. Budget unchanged at ${formatMoney(agent.budgetCents)}.</div>`;
+          receiptDisplay.appendChild(note);
+          log('money', `Replay OK — budget unchanged (${formatMoney(budgetBefore)} -> ${formatMoney(agent.budgetCents)})`);
+        } else {
+          // Anything other than a cached replay is a visible failure, not a success
+          const note = document.createElement('div');
+          note.className = 'status-message status-error';
+          note.innerHTML = `<div style="font-weight:bold;">✗ Replay did not return a cached result</div>`
+            + `<div style="margin-top:0.25rem;font-size:0.9rem;">Status ${response.status}, X-X402-Replay: ${replayFlag || '(none)'}</div>`;
+          receiptDisplay.appendChild(note);
+          log('money', 'Replay did not behave as expected');
+        }
+      } catch (error) {
+        log('money', `Replay error: ${error.message}`);
+      }
+    }
+
+    /**
+     * New take: re-bootstrap a fresh agent and clear all zones so the
+     * presenter can record another cold-start run.
+     */
+    async function newTake() {
+      lastSignatureHeader = null;
+      agent = { agentId: null, apiKey: null, hmacSecret: null, budgetCents: null };
+
+      // Clear logs and rendered output
+      ['log-agent', 'log-resource', 'log-money'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '';
+      });
+      const resourceLog = document.getElementById('log-resource');
+      if (resourceLog) resourceLog.innerHTML = '';
+      const receiptDisplay = document.getElementById('receipt-display');
+      if (receiptDisplay) receiptDisplay.innerHTML = '';
+      const enrollmentStatus = document.getElementById('enrollment-status');
+      if (enrollmentStatus) { enrollmentStatus.textContent = ''; enrollmentStatus.className = ''; }
+      const agentIdElement = document.getElementById('agent-id');
+      if (agentIdElement) agentIdElement.textContent = '–';
+      const budgetElement = document.getElementById('budget');
+      if (budgetElement) budgetElement.textContent = '–';
+      const replayBtn = document.getElementById('btn-replay');
+      if (replayBtn) replayBtn.disabled = true;
+
+      // Fresh cold-start agent
+      await bootstrap();
     }
 
     async function bootstrap() {
