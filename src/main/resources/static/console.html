@@ -1,1 +1,229 @@
-<!doctype html><title>Console</title><body>ok</body>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Demo Console</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #1a1a1a;
+      --surface: #2a2a2a;
+      --border: #444;
+      --text: #e0e0e0;
+      --text-muted: #a0a0a0;
+    }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 1rem;
+      min-height: 100vh;
+    }
+    h1 {
+      margin: 0 0 1rem 0;
+      font-size: 1.6rem;
+      text-align: center;
+    }
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1rem;
+      max-width: 1400px;
+      margin: 0 auto;
+      height: calc(100vh - 120px);
+    }
+    .zone {
+      background-color: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .zone h2 {
+      margin: 0 0 1rem 0;
+      font-size: 1.1rem;
+      color: var(--text);
+    }
+    .zone-content {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 0;
+    }
+    .log-area {
+      font-family: 'Courier New', monospace;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      line-height: 1.4;
+    }
+    .agent-info {
+      background-color: #1a1a1a;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.75rem;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+    .agent-info-label {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .agent-info-value {
+      color: var(--text);
+      font-weight: 500;
+      margin-top: 0.25rem;
+      font-family: 'Courier New', monospace;
+    }
+    #budget {
+      font-size: 1.8rem;
+      font-weight: bold;
+      color: #4ade80;
+      font-family: 'Courier New', monospace;
+      text-align: center;
+      padding: 1rem 0;
+    }
+    .budget-label {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      text-align: center;
+    }
+    .loading {
+      color: var(--text-muted);
+      font-style: italic;
+    }
+    .error {
+      color: #ef4444;
+    }
+  </style>
+</head>
+<body>
+  <h1>Agent Demo Console</h1>
+
+  <div class="container">
+    <!-- Agent Zone -->
+    <div class="zone" id="zone-agent">
+      <h2>Agent</h2>
+      <div class="zone-content">
+        <div class="agent-info">
+          <div class="agent-info-label">Agent ID</div>
+          <div class="agent-info-value" id="agent-id">–</div>
+        </div>
+        <div style="margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted);">
+          Log:
+        </div>
+        <div class="log-area" id="log-agent"></div>
+      </div>
+    </div>
+
+    <!-- Resource Zone -->
+    <div class="zone" id="zone-resource">
+      <h2>Resource</h2>
+      <div class="zone-content">
+        <div class="log-area" id="log-resource"></div>
+      </div>
+    </div>
+
+    <!-- Money Zone -->
+    <div class="zone" id="zone-money">
+      <h2>Money</h2>
+      <div class="zone-content">
+        <div class="budget-label">Budget</div>
+        <div id="budget">–</div>
+        <div class="log-area" id="log-money"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Module-level state holding agent bootstrap response
+    let agent = {
+      agentId: null,
+      apiKey: null,
+      hmacSecret: null,
+      budgetCents: null
+    };
+
+    /**
+     * Append a timestamped message to a zone's log area
+     */
+    function log(zone, msg) {
+      const logId = `log-${zone}`;
+      const logElement = document.getElementById(logId);
+      if (!logElement) return;
+
+      const now = new Date().toLocaleTimeString();
+      const line = `[${now}] ${msg}\n`;
+      logElement.textContent += line;
+      logElement.scrollTop = logElement.scrollHeight;
+    }
+
+    /**
+     * Format cents as USD currency string
+     */
+    function formatMoney(cents) {
+      return `$${(cents / 100).toFixed(2)}`;
+    }
+
+    /**
+     * Truncate agentId for display (show first 8 chars + ellipsis)
+     */
+    function displayAgentId(id) {
+      if (!id) return '–';
+      return id.length > 10 ? id.substring(0, 10) + '…' : id;
+    }
+
+    /**
+     * Bootstrap: fetch demo agent on page load
+     */
+    async function bootstrap() {
+      try {
+        log('agent', 'Bootstrapping demo agent...');
+
+        const response = await fetch('/v1/agents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'Demo Agent', budgetCents: 10000 })
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          log('agent', `Error: ${response.status} ${text}`);
+          return;
+        }
+
+        const data = await response.json();
+        agent = {
+          agentId: data.agentId,
+          apiKey: data.apiKey,
+          hmacSecret: data.hmacSecret,
+          budgetCents: data.budgetCents
+        };
+
+        // Render agent ID
+        const agentIdElement = document.getElementById('agent-id');
+        agentIdElement.textContent = displayAgentId(agent.agentId);
+
+        // Render budget
+        const budgetElement = document.getElementById('budget');
+        budgetElement.textContent = formatMoney(agent.budgetCents);
+
+        log('agent', `Agent ${displayAgentId(agent.agentId)} created`);
+        log('agent', `Budget: ${formatMoney(agent.budgetCents)}`);
+
+      } catch (error) {
+        log('agent', `Error: ${error.message}`);
+      }
+    }
+
+    // Start bootstrap on DOMContentLoaded
+    document.addEventListener('DOMContentLoaded', bootstrap);
+  </script>
+</body>
+</html>
