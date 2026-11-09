@@ -494,7 +494,7 @@
                 receiptSection.innerHTML += `
                   <div class="receipt-row">
                     <span class="receipt-label">Gross:</span>
-                    <span>${escapeHtml(formatMoney(receipt.extra.gross))}</span>
+                    <span>$${Number(receipt.extra.gross).toFixed(2)}</span>
                   </div>
                 `;
               }
@@ -502,7 +502,7 @@
                 receiptSection.innerHTML += `
                   <div class="receipt-row">
                     <span class="receipt-label">Fee:</span>
-                    <span>${escapeHtml(formatMoney(receipt.extra.fee))}</span>
+                    <span>$${Number(receipt.extra.fee).toFixed(2)}</span>
                   </div>
                 `;
               }
@@ -510,7 +510,7 @@
                 receiptSection.innerHTML += `
                   <div class="receipt-row">
                     <span class="receipt-label">Net:</span>
-                    <span>${escapeHtml(formatMoney(receipt.extra.net))}</span>
+                    <span>$${Number(receipt.extra.net).toFixed(2)}</span>
                   </div>
                 `;
               }
