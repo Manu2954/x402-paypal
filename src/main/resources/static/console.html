@@ -186,6 +186,9 @@
     <div class="zone" id="zone-money">
       <h2>Money</h2>
       <div class="zone-content">
+        <div class="button-group">
+          <button id="btn-buy-quote" onclick="buyQuote()">Buy Quote</button>
+        </div>
         <div class="budget-label">Budget</div>
         <div id="budget">–</div>
         <div class="log-area" id="log-money"></div>
@@ -201,6 +204,9 @@
       hmacSecret: null,
       budgetCents: null
     };
+
+    // Module-level state holding the last signature header for retries
+    let lastSignatureHeader = null;
 
     /**
      * Append a timestamped message to a zone's log area
@@ -319,6 +325,208 @@
 
       } catch (error) {
         log('agent', `Error: ${error.message}`);
+      }
+    }
+
+    /**
+     * Convert string to UTF-8 bytes
+     */
+    function utf8(str) {
+      return new TextEncoder().encode(str);
+    }
+
+    /**
+     * Compute HMAC-SHA256 and return base64url without padding
+     */
+    async function hmacBase64Url(secret, canonical) {
+      // Import the key
+      const key = await crypto.subtle.importKey(
+        'raw',
+        utf8(secret),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+
+      // Sign the canonical string
+      const signature = await crypto.subtle.sign('HMAC', key, utf8(canonical));
+
+      // Convert to base64url (no padding)
+      const bytes = new Uint8Array(signature);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64 = btoa(binary);
+      // Replace + with -, / with _, and remove padding =
+      return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+    }
+
+    /**
+     * Perform x402 sign-and-pay flow for /v1/premium/quote
+     * Step 1: GET without signature, expect 402 + PAYMENT-REQUIRED header
+     * Step 2: Extract challenge and check enrollment
+     * Step 3: Build canonical string and sign with HMAC-SHA256
+     * Step 4: GET with PAYMENT-SIGNATURE header
+     */
+    async function buyQuote() {
+      if (!agent.apiKey || !agent.hmacSecret || !agent.agentId) {
+        log('agent', 'Error: Agent not bootstrapped yet');
+        return;
+      }
+
+      try {
+        log('money', 'Initiating buyQuote...');
+
+        // Step 1: First leg - GET without signature, expect 402
+        log('money', 'Fetching /v1/premium/quote (unauthenticated attempt)...');
+        const firstResponse = await fetch('/v1/premium/quote', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${agent.apiKey}`
+          }
+        });
+
+        log('money', `Response: ${firstResponse.status}`);
+
+        if (firstResponse.status !== 402) {
+          log('money', `Expected 402, got ${firstResponse.status}`);
+          const text = await firstResponse.text();
+          log('money', `Body: ${text}`);
+          return;
+        }
+
+        // Read PAYMENT-REQUIRED header
+        const paymentRequiredHeader = firstResponse.headers.get('PAYMENT-REQUIRED');
+        if (!paymentRequiredHeader) {
+          log('money', 'Error: No PAYMENT-REQUIRED header in 402 response');
+          return;
+        }
+
+        // Decode the header (base64 -> JSON)
+        let required;
+        try {
+          const decoded = atob(paymentRequiredHeader);
+          required = JSON.parse(decoded);
+        } catch (e) {
+          log('money', `Error decoding PAYMENT-REQUIRED header: ${e.message}`);
+          return;
+        }
+
+        log('money', 'Challenge received');
+
+        // Step 2: Extract accept and check enrollment
+        const accepts = required.accepts;
+        if (!accepts || accepts.length === 0) {
+          log('money', 'Error: No payment options offered');
+          return;
+        }
+
+        const accept = accepts[0];
+        const enrolled = accept.extra && accept.extra.enrolled === true;
+
+        if (!enrolled) {
+          log('agent', 'Enroll first');
+          log('money', 'Enrollment required - stopping');
+          return;
+        }
+
+        // Step 3: Extract fields and build canonical string
+        const challengeId = accept.extra.challengeId;
+        const nonce = accept.extra.nonce;
+        const resource = required.resource.url;
+        const amount = accept.amount;
+        const asset = accept.asset;
+        const timestamp = Math.floor(Date.now() / 1000);
+
+        log('money', `Challenge ID: ${challengeId}`);
+        log('money', `Timestamp: ${timestamp}`);
+
+        // Build canonical string exactly as DemoAgent does
+        const canonical = [challengeId, 'GET', resource, amount, asset, nonce, String(timestamp)].join('\n');
+        log('money', `Canonical string built (${canonical.length} bytes)`);
+
+        // Sign with HMAC-SHA256
+        const signature = await hmacBase64Url(agent.hmacSecret, canonical);
+        log('money', `Signature computed: ${signature.substring(0, 20)}...`);
+
+        // Step 4: Build payload exactly as DemoAgent does
+        const payload = {
+          x402Version: 2,
+          accepted: accept,
+          payload: {
+            agentId: agent.agentId,
+            challengeId: challengeId,
+            nonce: nonce,
+            timestamp: timestamp,
+            signature: signature
+          }
+        };
+
+        // Encode payload as base64 (utf-8 safe)
+        const payloadJson = JSON.stringify(payload);
+        const payloadBytes = new TextEncoder().encode(payloadJson);
+        let binary = '';
+        for (let i = 0; i < payloadBytes.length; i++) {
+          binary += String.fromCharCode(payloadBytes[i]);
+        }
+        lastSignatureHeader = btoa(binary);
+        log('money', `Signature header prepared: ${lastSignatureHeader.substring(0, 20)}...`);
+
+        // Step 5: Second leg - GET with PAYMENT-SIGNATURE header
+        log('money', 'Retrying with PAYMENT-SIGNATURE header...');
+        const paidResponse = await fetch('/v1/premium/quote', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${agent.apiKey}`,
+            'PAYMENT-SIGNATURE': lastSignatureHeader
+          }
+        });
+
+        log('money', `Response: ${paidResponse.status}`);
+
+        // Check for receipt header
+        const receiptHeader = paidResponse.headers.get('PAYMENT-RESPONSE');
+        if (receiptHeader) {
+          try {
+            const decoded = atob(receiptHeader);
+            const receipt = JSON.parse(decoded);
+            log('money', `Receipt: ${JSON.stringify(receipt).substring(0, 100)}...`);
+          } catch (e) {
+            log('money', `Receipt header (raw): ${receiptHeader.substring(0, 50)}...`);
+          }
+        }
+
+        // Check for replay header
+        const replayHeader = paidResponse.headers.get('X-X402-Replay');
+        if (replayHeader) {
+          log('money', `Replay header: ${replayHeader}`);
+        }
+
+        // Log body based on status
+        if (paidResponse.status === 200) {
+          log('money', 'SUCCESS: Payment accepted (200)');
+          const body = await paidResponse.json();
+          log('money', `Quote: ${JSON.stringify(body).substring(0, 100)}...`);
+        } else if (paidResponse.status === 402) {
+          const body = await paidResponse.json();
+          const errorCode = body.errorCode || body.code || 'unknown';
+          log('money', `Payment declined: ${errorCode}`);
+          log('money', `Message: ${body.message || body.errorMessage || body.body || ''}`);
+        } else {
+          const text = await paidResponse.text();
+          log('money', `Response body: ${text.substring(0, 100)}`);
+        }
+
+        return {
+          status: paidResponse.status,
+          body: await paidResponse.json().catch(() => null),
+          receiptHeader: receiptHeader,
+          replayHeader: replayHeader
+        };
+
+      } catch (error) {
+        log('money', `Error: ${error.message}`);
       }
     }
 
