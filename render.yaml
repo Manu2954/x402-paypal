@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: x402-paypal-judge-demo
+    name: x402-paypal-agent-pay
     runtime: docker
     plan: free
     healthCheckPath: /actuator/health
