@@ -3,10 +3,13 @@ package io.x402.paypal.web;
 import java.util.List;
 import java.util.Map;
 
+import io.x402.paypal.demo.DemoRateLimitException;
+import io.x402.paypal.demo.DemoUnavailableException;
 import io.x402.paypal.enrollment.EnrollmentPendingException;
 import io.x402.paypal.paypal.PayPalApiException;
 import io.x402.paypal.premium.PremiumController;
 import io.x402.paypal.x402.X402Exception;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -61,6 +64,24 @@ public class GlobalExceptionHandler {
             builder.header(PremiumController.PAYMENT_REQUIRED_HEADER, exception.paymentRequiredHeader());
         }
         return builder.body(body);
+    }
+
+    @ExceptionHandler(DemoUnavailableException.class)
+    public ResponseEntity<Map<String, Object>> demoUnavailable(DemoUnavailableException exception) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
+                "error", "DEMO_UNAVAILABLE",
+                "message", exception.getMessage()
+        ));
+    }
+
+    @ExceptionHandler(DemoRateLimitException.class)
+    public ResponseEntity<Map<String, Object>> demoRateLimited(DemoRateLimitException exception) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, Long.toString(exception.retryAfterSeconds()))
+                .body(Map.of(
+                        "error", "DEMO_RATE_LIMITED",
+                        "message", exception.getMessage()
+                ));
     }
 
     @ExceptionHandler(EnrollmentPendingException.class)

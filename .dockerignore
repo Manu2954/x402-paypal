@@ -1,0 +1,10 @@
+.git
+.idea
+.claude
+.superpowers
+build
+out
+data
+*.log
+.env
+docs

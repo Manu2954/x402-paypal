@@ -30,7 +30,7 @@ public class EnrollmentController {
     @ResponseStatus(HttpStatus.CREATED)
     public EnrollmentService.EnrollmentCreated create(HttpServletRequest request,
                                                       @Valid @RequestBody CreateEnrollmentRequest body) {
-        return enrollmentService.create(principalId(request), body.sourceType());
+        return enrollmentService.createAt(principalId(request), body.sourceType(), externalBaseUrl(request));
     }
 
     @GetMapping
@@ -60,6 +60,47 @@ public class EnrollmentController {
 
     private String principalId(HttpServletRequest request) {
         return (String) request.getAttribute(AgentAuthFilter.PRINCIPAL_ID_ATTRIBUTE);
+    }
+
+    private String externalBaseUrl(HttpServletRequest request) {
+        String forwardedHost = firstNonBlank(request.getHeader("X-Forwarded-Host"));
+        if (forwardedHost != null) {
+            forwardedHost = forwardedHost.split(",")[0].trim();
+        }
+        String hostHeader = request.getHeader("Host");
+        String authority = forwardedHost != null ? forwardedHost : hostHeader;
+
+        String host = firstNonBlank(forwardedHost, request.getServerName());
+        String proto = firstNonBlank(request.getHeader("X-Forwarded-Proto"), request.getHeader("X-Forwarded-Scheme"));
+        if (proto != null) {
+            proto = proto.split(",")[0].trim();
+        } else {
+            proto = request.getScheme();
+            int port = request.getServerPort();
+            boolean localHost = host == null || host.equalsIgnoreCase("localhost") || host.equals("127.0.0.1")
+                    || host.equals("[::1]") || host.equals("::1");
+            // TLS-terminating proxies (tunnels, load balancers) reach the app over plain HTTP
+            // with a public Host header; assume https when no explicit proto is forwarded.
+            if (!localHost && "http".equalsIgnoreCase(proto) && (port == 80 || port == 443 || port <= 0)) {
+                proto = "https";
+            }
+        }
+
+        if (authority == null || authority.isBlank()) {
+            int port = request.getServerPort();
+            boolean defaultPort = port == 80 || port == 443 || port <= 0;
+            authority = request.getServerName() + (defaultPort ? "" : ":" + port);
+        }
+        return proto.toLowerCase() + "://" + authority;
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
     }
 
     public record CreateEnrollmentRequest(@NotBlank String sourceType) {

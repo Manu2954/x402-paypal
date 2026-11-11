@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>x402 Agent Pay — the agent pays its own way</title>
+  <meta name="description" content="A working x402 paywall for AI agents, settled per request with a saved PayPal sandbox card. Watch a real capture happen in one click.">
+  <meta name="theme-color" content="#05060a">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/app.css">
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <div class="page-glow" aria-hidden="true"></div>
+  <div class="page-grid" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="x402 Agent Pay home">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" role="img"><path d="M7 8h5l4 5 4-5h5l-6.5 8L25 24h-5l-4-5-4 5H7l6.5-8L7 8Z"/><circle cx="25" cy="7" r="2.4"/></svg>
+      </span>
+      <span class="brand-type"><strong>x402</strong><span>agent pay</span></span>
+    </a>
+    <nav class="site-nav" aria-label="Primary">
+      <a href="#how">How it works</a>
+      <a href="#demo">Live demo</a>
+      <a href="#funding">Card setup</a>
+      <a href="#under-the-hood">Under the hood</a>
+    </nav>
+    <div class="header-actions">
+      <span class="header-badge"><span class="live-dot"></span> PayPal sandbox</span>
+      <a class="ghost-button" href="https://github.com/Manu2954/x402-paypal" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="live-dot"></span> PayPal AI Hackathon · live prototype</div>
+        <h1>Let your agent<br><span class="gradient-text">pay its own way.</span></h1>
+        <p class="lede">
+          A working <strong>x402 paywall</strong> for autonomous agents, settled per request with a
+          saved <strong>PayPal Vault</strong> card. The agent gets a budget — never a card number.
+        </p>
+        <div class="hero-actions">
+          <button class="primary-button hero-run" id="hero-run" type="button">
+            <span class="button-shine" aria-hidden="true"></span>
+            Run a live $1 payment
+            <span class="button-arrow" aria-hidden="true">→</span>
+          </button>
+          <a class="secondary-button" href="#how">See how it works</a>
+        </div>
+        <p class="hero-proof-line">
+          <span class="proof-group"><span class="check">✓</span> Real PayPal sandbox capture <span class="proof-highlight">Card already enrolled</span></span>
+          <span class="proof-group">No sign-in required <span class="proof-sep">·</span> ~10 seconds</span>
+        </p>
+      </div>
+
+      <div class="hero-visual" aria-hidden="true">
+        <div class="trace-card">
+          <div class="trace-card-head">
+            <span class="trace-live"><span class="live-dot"></span> live sandbox trace</span>
+            <span class="mono trace-ms">~1.8s</span>
+          </div>
+          <div class="trace-rows">
+            <div class="trace-row">
+              <div class="trace-node node-agent">AI</div>
+              <div class="trace-copy"><strong>Judge Agent</strong><span>GET /v1/premium/quote</span></div>
+              <span class="trace-chip">request</span>
+            </div>
+            <div class="trace-connector"><span></span></div>
+            <div class="trace-row">
+              <div class="trace-node node-402">402</div>
+              <div class="trace-copy"><strong>Paywall</strong><span>challenge · nonce · HMAC</span></div>
+              <span class="trace-chip warn">payment required</span>
+            </div>
+            <div class="trace-connector"><span></span></div>
+            <div class="trace-row">
+              <div class="trace-node node-paypal">P</div>
+              <div class="trace-copy"><strong>PayPal Vault</strong><span>VISA •••• 1111 · tokenized</span></div>
+              <span class="trace-chip money">$1.00</span>
+            </div>
+            <div class="trace-connector"><span></span></div>
+            <div class="trace-row">
+              <div class="trace-node node-200">200</div>
+              <div class="trace-copy"><strong>Premium data</strong><span>content + capture receipt</span></div>
+              <span class="trace-chip success">unlocked</span>
+            </div>
+          </div>
+          <div class="trace-card-foot">
+            <span>captured on live rails</span>
+            <span class="mono">capture 4FR3…7525Y</span>
+          </div>
+        </div>
+        <div class="floating-tag tag-one">PAYMENT-REQUIRED</div>
+        <div class="floating-tag tag-two">PAYMENT-RESPONSE</div>
+      </div>
+    </section>
+
+    <section class="stats-strip" aria-label="Prototype at a glance">
+      <div class="stat"><span class="stat-value">$1.00</span><span class="stat-label">per request</span></div>
+      <div class="stat"><span class="stat-value">402 → 200</span><span class="stat-label">one round trip</span></div>
+      <div class="stat"><span class="stat-value">0</span><span class="stat-label">card numbers on server</span></div>
+      <div class="stat"><span class="stat-value">1×</span><span class="stat-label">charge, even on replay</span></div>
+    </section>
+
+    <section class="section how" id="how">
+      <div class="section-heading">
+        <div class="eyebrow">The idea in four beats</div>
+        <h2>An HTTP paywall<br>that machines can settle.</h2>
+        <p>
+          x402 turns “Payment Required” into a protocol. PayPal Vault turns a one-time card approval
+          into a reusable, tokenized funding source. Together they give agents a budget without
+          giving them a wallet.
+        </p>
+      </div>
+      <div class="how-grid">
+        <article class="how-card">
+          <div class="how-top"><span class="how-number">01</span><span class="how-icon">↗</span></div>
+          <h3>The agent asks</h3>
+          <p>The agent calls a paid tool with its own API key. No human, no checkout screen.</p>
+          <code class="code-chip">GET /v1/premium/quote</code>
+        </article>
+        <article class="how-card">
+          <div class="how-top"><span class="how-number">02</span><span class="how-icon warn-icon">402</span></div>
+          <h3>The paywall challenges</h3>
+          <p>The API returns <code>402 Payment Required</code> with a signed, single-use challenge.</p>
+          <code class="code-chip">PAYMENT-REQUIRED: eyJ4NDAy…</code>
+        </article>
+        <article class="how-card">
+          <div class="how-top"><span class="how-number">03</span><span class="how-icon mint-icon">⌁</span></div>
+          <h3>The agent signs</h3>
+          <p>It HMAC-signs the resource, amount, nonce and timestamp, then retries in the same request.</p>
+          <code class="code-chip">HMAC-SHA256 → PAYMENT-SIGNATURE</code>
+        </article>
+        <article class="how-card">
+          <div class="how-top"><span class="how-number">04</span><span class="how-icon paypal-icon">P</span></div>
+          <h3>PayPal settles</h3>
+          <p>The server creates and captures a PayPal order using the saved vault token. Content unlocks.</p>
+          <code class="code-chip">PAYMENT-RESPONSE: capture 4FR3…</code>
+        </article>
+      </div>
+    </section>
+
+    <section class="section demo-section" id="demo">
+      <div class="section-heading demo-heading">
+        <div>
+          <div class="eyebrow">Live transaction theater</div>
+          <h2>Watch an agent buy data.</h2>
+          <p>
+            This is not a recording. Every click below runs the real x402 flow against the running
+            Spring Boot service and creates a real <strong>PayPal sandbox capture</strong>.
+          </p>
+        </div>
+        <div class="judge-note">
+          <span class="judge-note-label">Judge shortcut</span>
+          <span>Press <strong>Run agent</strong>, then <strong>Replay</strong>. That is the whole product.</span>
+        </div>
+      </div>
+
+      <div class="console-shell" id="console">
+        <div class="console-bar">
+          <div class="window-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+          <div class="console-title mono">agent-pay / judge-session</div>
+          <div class="session-pill starting" id="session-pill" role="status" aria-live="polite">
+            <span class="session-dot"></span><span id="session-label">Starting session…</span>
+          </div>
+        </div>
+
+        <div class="console-grid">
+          <aside class="panel agent-panel">
+            <div class="panel-label"><span>01</span> The agent</div>
+            <div class="agent-identity">
+              <div class="agent-orb"><span>AI</span><i></i></div>
+              <div class="agent-copy">
+                <div class="agent-name" id="agent-name">Judge Agent</div>
+                <div class="agent-id mono" id="agent-id">agt_…</div>
+              </div>
+            </div>
+
+            <div class="budget-block">
+              <div class="budget-row"><span>Sandbox budget</span><strong id="budget">$10.00</strong></div>
+              <div class="budget-track"><div class="budget-fill" id="budget-fill"></div></div>
+              <div class="budget-meta"><span id="spent-label">$0.00 spent</span><span id="budget-total">of $10.00</span></div>
+            </div>
+
+            <div class="scenario-label">Choose a metered resource</div>
+            <div class="scenario-control" role="radiogroup" aria-label="Choose a metered resource">
+              <label class="scenario-card active">
+                <input type="radio" name="scenario" value="quote" checked>
+                <span class="scenario-icon">↗</span>
+                <span class="scenario-copy"><strong>Market quote</strong><small>GET /v1/premium/quote</small></span>
+                <span class="scenario-price" id="quote-price">$1.00</span>
+              </label>
+              <label class="scenario-card">
+                <input type="radio" name="scenario" value="report">
+                <span class="scenario-icon">▤</span>
+                <span class="scenario-copy"><strong>Signal report</strong><small>GET /v1/premium/report</small></span>
+                <span class="scenario-price" id="report-price">$2.00</span>
+              </label>
+            </div>
+
+            <button class="primary-button run-button" id="run-agent" type="button" disabled>
+              <span class="run-spinner" aria-hidden="true"></span>
+              <span class="run-icon" aria-hidden="true">▶</span>
+              <span id="run-label">Run agent</span>
+            </button>
+            <button class="text-button" id="new-session" type="button">↻ Start a new judge session</button>
+            <p class="agent-note">The agent holds its API key and signing secret in browser memory. Nothing is copied or pasted.</p>
+          </aside>
+
+          <div class="panel flow-panel">
+            <div class="panel-label"><span>02</span> The x402 exchange</div>
+            <ol class="steps" id="steps">
+              <li class="step" data-step="request">
+                <div class="step-marker"><span class="step-num">1</span><span class="step-spinner"></span></div>
+                <div class="step-body">
+                  <div class="step-title">Request premium data <span class="step-chip" data-chip="request"></span></div>
+                  <div class="step-desc">The agent calls the paywalled endpoint with its API key.</div>
+                  <div class="step-output mono hidden" data-output="request"></div>
+                </div>
+              </li>
+              <li class="step" data-step="challenge">
+                <div class="step-marker"><span class="step-num">2</span><span class="step-spinner"></span></div>
+                <div class="step-body">
+                  <div class="step-title">Receive a 402 challenge <span class="step-chip" data-chip="challenge"></span></div>
+                  <div class="step-desc">A single-use challenge binds the amount, resource, nonce and expiry.</div>
+                  <div class="step-output mono hidden" data-output="challenge"></div>
+                </div>
+              </li>
+              <li class="step" data-step="sign">
+                <div class="step-marker"><span class="step-num">3</span><span class="step-spinner"></span></div>
+                <div class="step-body">
+                  <div class="step-title">Sign the intent <span class="step-chip" data-chip="sign"></span></div>
+                  <div class="step-desc">The agent signs the canonical challenge with HMAC-SHA256, then retries.</div>
+                  <div class="step-output mono hidden" data-output="sign"></div>
+                </div>
+              </li>
+              <li class="step" data-step="paypal">
+                <div class="step-marker"><span class="step-num">4</span><span class="step-spinner"></span></div>
+                <div class="step-body">
+                  <div class="step-title">PayPal settles the charge <span class="step-chip" data-chip="paypal"></span></div>
+                  <div class="step-desc">The server creates and captures a PayPal order with the vault token.</div>
+                  <div class="step-output mono hidden" data-output="paypal"></div>
+                </div>
+              </li>
+              <li class="step" data-step="unlock">
+                <div class="step-marker"><span class="step-num">5</span><span class="step-spinner"></span></div>
+                <div class="step-body">
+                  <div class="step-title">Content unlocks <span class="step-chip" data-chip="unlock"></span></div>
+                  <div class="step-desc">The same HTTP request returns the data and a verifiable receipt.</div>
+                  <div class="step-output mono hidden" data-output="unlock"></div>
+                </div>
+              </li>
+            </ol>
+
+            <div class="premium-output hidden" id="premium-output">
+              <div class="premium-output-head">
+                <span class="premium-badge">✓ premium content</span>
+                <span class="mono" id="premium-path">GET /v1/premium/quote</span>
+              </div>
+              <pre class="premium-json" id="premium-json"></pre>
+            </div>
+            <div class="flow-footnote" id="flow-footnote">Ready when you are. The first step is one click.</div>
+          </div>
+
+          <aside class="panel money-panel">
+            <div class="panel-label"><span>03</span> The settlement</div>
+            <div class="card-visual">
+              <div class="card-top"><span class="card-issuer">PayPal Vault</span><span class="card-network" id="card-brand">VISA</span></div>
+              <div class="card-number"><span>••••</span><span>••••</span><span>••••</span><span id="card-last4">1111</span></div>
+              <div class="card-bottom"><span class="card-enrolled"><span class="live-dot"></span> enrolled · active</span><span class="mono">tokenized</span></div>
+              <div class="card-glow" aria-hidden="true"></div>
+            </div>
+
+            <div class="receipt" id="receipt">
+              <div class="empty-receipt" id="empty-receipt">
+                <div class="receipt-icon">$</div>
+                <p>Run the agent to see a real PayPal sandbox capture appear here.</p>
+              </div>
+              <div class="receipt-body hidden" id="receipt-body">
+                <div class="receipt-status"><span class="receipt-check">✓</span><span id="receipt-status-text">SETTLED</span><span class="receipt-time" id="receipt-time"></span></div>
+                <div class="receipt-grid">
+                  <div class="receipt-row"><span>Charged</span><strong id="receipt-gross">$0.00</strong></div>
+                  <div class="receipt-row"><span>PayPal fee</span><span id="receipt-fee">—</span></div>
+                  <div class="receipt-row"><span>Net</span><span id="receipt-net">—</span></div>
+                </div>
+                <div class="receipt-ids">
+                  <button class="id-row copyable" type="button" data-copy-target="receipt-order" title="Copy order ID">
+                    <span>Order</span><code class="mono" id="receipt-order">—</code><span class="copy-mark">⧉</span>
+                  </button>
+                  <button class="id-row copyable" type="button" data-copy-target="receipt-capture" title="Copy capture ID">
+                    <span>Capture</span><code class="mono" id="receipt-capture">—</code><span class="copy-mark">⧉</span>
+                  </button>
+                </div>
+                <div class="receipt-foot"><span class="real-badge"><span class="live-dot"></span> real sandbox transaction</span></div>
+              </div>
+            </div>
+
+            <div class="replay-card hidden" id="replay-card">
+              <div class="replay-head">
+                <span class="replay-glyph">↺</span>
+                <div><strong>Replay the exact same request</strong><small>Same signature. No second charge.</small></div>
+              </div>
+              <button class="secondary-button full-width" id="replay-button" type="button">Send identical signature</button>
+              <div class="replay-result" id="replay-result" role="status" aria-live="polite"></div>
+            </div>
+            <p class="money-note">Sandbox only. This prototype charges a PayPal test card, not real money.</p>
+          </aside>
+        </div>
+
+        <div class="console-feedback hidden" id="feedback" role="status" aria-live="polite"></div>
+      </div>
+
+      <section class="funding-section" id="funding">
+        <div class="funding-card">
+          <div class="funding-main">
+            <div class="funding-check" aria-hidden="true">✓</div>
+            <div class="funding-copy">
+              <div class="eyebrow">Funding source</div>
+              <h3>Card <span class="funding-highlight">already enrolled</span>.</h3>
+              <p>
+                <strong id="funding-card-label">VISA •••• 1111</strong> is active for this judge session
+                through PayPal Vault. <strong>You do not need to set up anything.</strong>
+              </p>
+              <div class="funding-badges">
+                <span class="funding-badge active"><span class="live-dot"></span> ACTIVE</span>
+                <span class="funding-badge">tokenized</span>
+                <span class="funding-badge">no PAN on server</span>
+              </div>
+            </div>
+          </div>
+          <div class="funding-action">
+            <button class="secondary-button" id="enroll-toggle" type="button"
+                    aria-expanded="false" aria-controls="enroll-panel">
+              <span id="enroll-toggle-label">Set up a different card</span>
+              <span class="optional-tag">optional</span>
+            </button>
+            <p>Only needed to walk through PayPal CardFields.</p>
+          </div>
+        </div>
+
+        <div class="enroll-panel hidden" id="enroll-panel">
+          <div class="enroll-head">
+            <div>
+              <div class="eyebrow">Optional card setup</div>
+              <h3>Add another sandbox card</h3>
+            </div>
+            <button class="icon-button" id="enroll-close" type="button" aria-label="Close card setup">×</button>
+          </div>
+          <p class="enroll-lede">
+            Your current <strong id="enroll-existing-label">VISA •••• 1111</strong> stays active while you set up
+            another card. Once PayPal confirms the new one, future runs use it automatically.
+          </p>
+          <div class="enroll-grid">
+            <ol class="enroll-steps">
+              <li class="enroll-step" data-enroll-step="create">
+                <span class="enroll-step-num">1</span>
+                <div>
+                  <strong>Create the enrollment</strong>
+                  <small>This page asks the server for a secure PayPal card setup token.</small>
+                </div>
+              </li>
+              <li class="enroll-step" data-enroll-step="card">
+                <span class="enroll-step-num">2</span>
+                <div>
+                  <strong>Enter a card with PayPal</strong>
+                  <small>PayPal's hosted CardFields window collects the card. No card number reaches this server.</small>
+                </div>
+              </li>
+              <li class="enroll-step" data-enroll-step="active">
+                <span class="enroll-step-num">3</span>
+                <div>
+                  <strong>Return to this page</strong>
+                  <small>Status is checked automatically. The new card becomes the active funding source.</small>
+                </div>
+              </li>
+            </ol>
+            <div class="enroll-action">
+              <button class="primary-button" id="enroll-card" type="button">Start optional card setup</button>
+              <p class="test-card-hint">
+                Sandbox test card <code>4111 1111 1111 1111</code><br>
+                Any future expiry · any CVV
+              </p>
+              <div class="enroll-status" id="enroll-status" role="status" aria-live="polite">
+                No new card set up. Your current card is ready.
+              </div>
+              <a class="enroll-open-link hidden" id="enroll-open-link" href="#" target="_blank" rel="noopener">
+                Open PayPal card setup ↗
+              </a>
+              <div class="enroll-secondary-actions">
+                <button class="text-button hidden" id="enroll-check" type="button">Check status now</button>
+                <button class="text-button hidden" id="enroll-retry" type="button">Try the setup again</button>
+              </div>
+            </div>
+          </div>
+          <p class="enroll-privacy">PayPal hosts the card form. This server stores only an encrypted vault token.</p>
+        </div>
+      </section>
+
+      <div class="raw-shell">
+        <div class="raw-head">
+          <div>
+            <div class="panel-label">Under the hood of this run</div>
+            <p>The actual bytes this browser sent and received. No mock data.</p>
+          </div>
+          <div class="raw-actions">
+            <div class="tabs" role="tablist" aria-label="Protocol messages">
+              <button class="tab active" data-tab="challenge" role="tab" aria-selected="true">402 challenge</button>
+              <button class="tab" data-tab="signature" role="tab" aria-selected="false">Signed retry</button>
+              <button class="tab" data-tab="receipt" role="tab" aria-selected="false">Receipt</button>
+              <button class="tab" data-tab="content" role="tab" aria-selected="false">Content</button>
+            </div>
+            <button class="copy-button" id="copy-raw" type="button">Copy</button>
+          </div>
+        </div>
+        <pre class="raw-output" id="raw-output">Run the agent above, then inspect the real protocol exchange here.</pre>
+      </div>
+
+      <div class="judge-checklist">
+        <div class="checklist-copy">
+          <div class="eyebrow">For the 60-second judge</div>
+          <h3>Three clicks tell the whole story.</h3>
+        </div>
+        <ol class="checklist">
+          <li><span>1</span><div><strong>Run the agent</strong><p>See a 402 challenge, an HMAC signature and a real PayPal capture.</p></div></li>
+          <li><span>2</span><div><strong>Replay the signature</strong><p>Get the same content with <code>X-X402-Replay: true</code> and no second charge.</p></div></li>
+          <li><span>3</span><div><strong>Switch the resource</strong><p>Buy the $2 signal report. The same protocol meters every call.</p></div></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="section architecture" id="under-the-hood">
+      <div class="section-heading">
+        <div class="eyebrow">Under the hood</div>
+        <h2>Real rails, narrow scope.</h2>
+        <p>
+          This is a focused prototype: one seller, one saved card, two metered endpoints. Every
+          value below is produced by the running service.
+        </p>
+      </div>
+      <div class="architecture-grid">
+        <div class="arch-visual">
+          <div class="arch-column">
+            <div class="arch-node">
+              <span class="arch-icon agent-arch">AI</span>
+              <div><strong>Autonomous agent</strong><small>browser / CLI · holds API key</small></div>
+            </div>
+            <div class="arch-node">
+              <span class="arch-icon">402</span>
+              <div><strong>x402 paywall</strong><small>Spring Boot · challenge + HMAC</small></div>
+            </div>
+          </div>
+          <div class="arch-arrows" aria-hidden="true"><span>HTTPS</span><i></i><span>signed retry</span><i></i></div>
+          <div class="arch-column">
+            <div class="arch-node">
+              <span class="arch-icon paypal-arch">P</span>
+              <div><strong>PayPal Vault</strong><small>tokenized card · no PAN on server</small></div>
+            </div>
+            <div class="arch-node">
+              <span class="arch-icon money-arch">$</span>
+              <div><strong>Orders + capture</strong><small>per-request settlement</small></div>
+            </div>
+          </div>
+        </div>
+        <div class="arch-code">
+          <div class="code-head"><span class="mono">what the agent signs</span><span class="code-badge">HMAC-SHA256</span></div>
+          <pre><span class="line-comment">// canonical, newline-joined</span>
+<span class="line-key">challengeId</span>
+<span class="line-key">GET</span>
+<span class="line-key">https://…/v1/premium/quote</span>
+<span class="line-key">100</span>
+<span class="line-key">USD</span>
+<span class="line-key">nonce</span>
+<span class="line-key">1760000000</span>
+
+<span class="line-comment">// then header</span>
+PAYMENT-SIGNATURE: <span class="line-accent">eyJ4NDAyVmVyc2lvbi…</span></code></pre>
+          <p class="code-note">Change one field and the server returns <code>INVALID_SIGNATURE</code>. Reuse the challenge and it returns the cached result with no new charge.</p>
+        </div>
+      </div>
+
+      <div class="feature-grid">
+        <article class="feature-card">
+          <span class="feature-icon">◈</span>
+          <h3>The card never touches the server</h3>
+          <p>CardFields sends the PAN directly to PayPal. This service stores only an encrypted vault token.</p>
+        </article>
+        <article class="feature-card">
+          <span class="feature-icon">⌁</span>
+          <h3>Every payment is a signed intent</h3>
+          <p>The HMAC covers resource, amount, asset, nonce and timestamp. A tampered amount fails verification.</p>
+        </article>
+        <article class="feature-card">
+          <span class="feature-icon">↺</span>
+          <h3>Replays can’t double-charge</h3>
+          <p>The challenge is single-use. A replay returns cached content with <code>X-X402-Replay: true</code>.</p>
+        </article>
+        <article class="feature-card">
+          <span class="feature-icon">▤</span>
+          <h3>Budgets are enforced server-side</h3>
+          <p>Each agent has a hard budget. The server reserves, settles or releases it around the PayPal capture.</p>
+        </article>
+      </div>
+
+      <div class="api-card">
+        <div class="api-head"><span>The surface area</span><span class="mono">HTTP + JSON</span></div>
+        <div class="api-rows">
+          <div class="api-row"><code>POST</code><span>/v1/demo/session</span><small>Create a judge agent + demo enrollment</small></div>
+          <div class="api-row"><code>GET</code><span>/v1/premium/quote</span><small>x402 · $1.00 · market quote</small></div>
+          <div class="api-row"><code>GET</code><span>/v1/premium/report</span><small>x402 · $2.00 · signal report</small></div>
+          <div class="api-row"><code>GET</code><span>/v1/agents/me</span><small>Budget, spend and status</small></div>
+          <div class="api-row"><code>POST</code><span>/v1/payments/attempts/{id}/resume</span><small>Resume after payer action</small></div>
+          <div class="api-row"><code>POST</code><span>/webhooks/paypal</span><small>Verified capture + vault events</small></div>
+        </div>
+      </div>
+
+      <div class="honesty-note">
+        <span class="honesty-icon">i</span>
+        <p><strong>What is real:</strong> the x402 challenge, HMAC verification, PayPal Vault token, Orders v2 capture, budget ledger and replay behavior. <strong>What is demo:</strong> the premium data is canned, the card is a PayPal sandbox test card, and no real money moves.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-brand">
+      <span class="brand-mark small" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><path d="M7 8h5l4 5 4-5h5l-6.5 8L25 24h-5l-4-5-4 5H7l6.5-8L7 8Z"/><circle cx="25" cy="7" r="2.4"/></svg>
+      </span>
+      <div><strong>x402 Agent Pay</strong><span>Built for the PayPal AI Hackathon</span></div>
+    </div>
+    <div class="footer-links">
+      <a href="https://github.com/Manu2954/x402-paypal" target="_blank" rel="noreferrer">Source ↗</a>
+      <a href="/actuator/health" target="_blank" rel="noreferrer">Health</a>
+      <a href="/v1/diagnostics/paypal" target="_blank" rel="noreferrer">PayPal status</a>
+    </div>
+    <p class="footer-fineprint">Sandbox prototype · No card data reaches this server · No real money moves</p>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

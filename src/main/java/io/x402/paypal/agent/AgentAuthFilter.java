@@ -38,7 +38,11 @@ public class AgentAuthFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         if (path.startsWith("/actuator") || path.startsWith("/h2-console")
                 || path.startsWith("/webhooks") || path.startsWith("/enroll")
-                || path.startsWith("/v1/diagnostics") || path.equals("/console.html")) {
+                || path.startsWith("/v1/diagnostics") || path.startsWith("/v1/demo")
+                || path.startsWith("/assets/") || path.startsWith("/fonts/")
+                || path.equals("/") || path.equals("/index.html")
+                || path.equals("/app.css") || path.equals("/app.js") || path.equals("/favicon.svg")
+                || path.equals("/console.html") || path.equals("/error")) {
             return true;
         }
         return "POST".equalsIgnoreCase(request.getMethod()) && "/v1/agents".equals(path);

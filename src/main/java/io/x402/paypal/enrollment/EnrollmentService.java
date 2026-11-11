@@ -38,12 +38,18 @@ public class EnrollmentService {
 
     @Transactional
     public EnrollmentCreated create(String principalId, String sourceType) {
+        return createAt(principalId, sourceType, appProperties.baseUrl());
+    }
+
+    @Transactional
+    public EnrollmentCreated createAt(String principalId, String sourceType, String publicBaseUrl) {
         String normalizedSource = normalizeSource(sourceType);
         String enrollmentId = Ids.id("enr_");
         String customerId = Ids.payPalCustomerId();
         LocalDateTime now = LocalDateTime.now(Clock.systemUTC());
         String linkToken = cryptoService.issueEnrollmentToken(enrollmentId, Instant.now().plus(1, ChronoUnit.HOURS));
-        String enrollmentUrl = appProperties.baseUrl() + "/enroll/" + linkToken;
+        String baseUrl = normalizeBaseUrl(publicBaseUrl);
+        String enrollmentUrl = baseUrl + "/enroll/" + linkToken;
         String returnUrl = enrollmentUrl + "/return";
         String cancelUrl = enrollmentUrl + "/cancel";
 
@@ -215,6 +221,13 @@ public class EnrollmentService {
                 enrollment.getApproveUrl(),
                 enrollment.getCreatedAt().toString()
         );
+    }
+
+    private String normalizeBaseUrl(String publicBaseUrl) {
+        String value = publicBaseUrl == null || publicBaseUrl.isBlank()
+                ? appProperties.baseUrl()
+                : publicBaseUrl.trim();
+        return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
     }
 
     private String normalizeSource(String sourceType) {

@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: x402-paypal-judge-demo
+    runtime: docker
+    plan: free
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: PAYPAL_ENV
+        value: sandbox
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: X402_MASTER_KEY
+        generateValue: true
+      - key: X402_VAULT_KEY
+        generateValue: true
+      - key: X402_NETWORK
+        value: paypal:sandbox
+      - key: X402_ASSET
+        value: USD
+      - key: X402_PAY_TO
+        value: merchant
+      - key: DEMO_ENABLED
+        value: "true"
+      - key: DEMO_VAULT_TOKEN
+        sync: false
+      - key: DEMO_CARD_BRAND
+        value: VISA
+      - key: DEMO_CARD_LAST4
+        value: "1111"
+      - key: DEMO_BUDGET_CENTS
+        value: "1000"
+      - key: DEMO_MAX_SESSIONS_PER_HOUR
+        value: "300"
+      # The container filesystem is ephemeral, so keep H2 in memory. Judge
+      # sessions are created per page load, so nothing needs to survive a deploy.
+      - key: SPRING_DATASOURCE_URL
+        value: jdbc:h2:mem:x402;DB_CLOSE_DELAY=-1
+      # Never expose the database console or health internals on a public link.
+      - key: SPRING_H2_CONSOLE_ENABLED
+        value: "false"
+      - key: MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS
+        value: never

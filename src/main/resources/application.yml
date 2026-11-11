@@ -21,11 +21,20 @@ spring:
       path: /h2-console
 
 server:
-  port: 8080
+  port: ${PORT:8080}
+  forward-headers-strategy: framework
 
 app:
   public-base-url: ${APP_PUBLIC_BASE_URL:http://localhost:8080}
-  brand-name: Premium API
+  brand-name: ${APP_BRAND_NAME:x402 Agent Pay}
+
+demo:
+  enabled: ${DEMO_ENABLED:false}
+  vault-token: ${DEMO_VAULT_TOKEN:}
+  brand: ${DEMO_CARD_BRAND:VISA}
+  last4: ${DEMO_CARD_LAST4:1111}
+  budget-cents: ${DEMO_BUDGET_CENTS:1000}
+  max-sessions-per-hour: ${DEMO_MAX_SESSIONS_PER_HOUR:60}
 
 paypal:
   env: ${PAYPAL_ENV:sandbox}
