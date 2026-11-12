@@ -8,7 +8,13 @@ No card data reaches the API server.
 
 Open the single link and press **Run a live $1 payment** — no install, no sign-in, no terminal:
 
-**https://vfcu6ghchha6pogffc2afa7zmi.srv.us/**
+**https://g4s46q34fmmfy3alacn7z7zdli.srv.us/**
+
+### Submission docs
+
+- [`PROJECT.md`](PROJECT.md) — the hackathon write-up (inspiration through what's next)
+- [`TECH_DOC.md`](TECH_DOC.md) — architecture, protocol, data model, API and security
+- [`DEMO_SCRIPT.md`](DEMO_SCRIPT.md) — 3-minute video script and YouTube metadata
 
 The page creates a fresh judge session on load:
 
