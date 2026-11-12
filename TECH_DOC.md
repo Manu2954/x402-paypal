@@ -617,14 +617,40 @@ docker build -t x402-paypal .
 docker run --env-file .env -p 8080:8080 x402-paypal
 ```
 
-Verification performed on this codebase:
+### Live deployment
+
+| Item | Value |
+| --- | --- |
+| URL | `https://x402-paypal-agent-pay.onrender.com/` |
+| Host | Render, Docker runtime, blueprint from `render.yaml` |
+| Health | `https://x402-paypal-agent-pay.onrender.com/actuator/health` |
+
+Verified against the live deployment:
+
+```
+session ................ Live sandbox ready
+payment ................ capture 6SF281842S6607129, order 8DY759540V3892025, $10.00 → $9.00
+replay ................. X-X402-Replay: true, no second charge, budget unchanged
+enrollment host ........ https://x402-paypal-agent-pay.onrender.com
+hosted CardFields ...... MASTERCARD •••• 4444 saved
+judge status ........... "New card active…"
+second charge .......... capture 5R865233TN3440317, budget $9.00 → $8.00
+horizontal overflow .... 0 (desktop and mobile)
+console errors ......... none
+```
+
+Enrollment links resolve to the public Render host without setting
+`APP_PUBLIC_BASE_URL`, because `EnrollmentController.externalBaseUrl` derives the base
+from `X-Forwarded-Proto` / `X-Forwarded-Host` and the `Host` header.
+
+### Verification performed on this codebase
 
 - `./gradlew test` — passes
 - Real sandbox captures end to end, including replay with no second charge
 - Optional CardFields enrollment, activation, and a subsequent charge on the new token
 - Docker image built and run under a **512 MB** memory cap without OOM
-- Public deployment verified through a tunnel, including enrollment URLs resolving to
-  the public host
+- Public deployment verified on Render and through a tunnel, including enrollment URLs
+  resolving to the public host
 
 ---
 

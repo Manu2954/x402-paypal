@@ -109,7 +109,7 @@ pay-per-request paywall for autonomous agents, settled with a saved PayPal Vault
 card — real x402 challenge, real sandbox capture, hard budget, no card numbers on
 the server.
 
-Demo: <your link>
+Demo: https://x402-paypal-agent-pay.onrender.com/
 Code: https://github.com/Manu2954/x402-paypal
 
 Chapters
